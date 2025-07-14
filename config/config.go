@@ -67,6 +67,7 @@ type Core struct {
 	VerifyCert   bool   `ini:"verifycert"`
 	ProfileName  string `ini:"profile"`
 	AutoComplete bool   `ini:"autocomplete"`
+	PostRequest  bool   `ini:postrequest`
 }
 
 // Config describes CLI config file and default options
@@ -151,6 +152,7 @@ func defaultCoreConfig() Core {
 		VerifyCert:   true,
 		ProfileName:  "localcloud",
 		AutoComplete: true,
+		PostRequest:  true,
 	}
 }
 
@@ -281,6 +283,9 @@ func saveConfig(cfg *Config) *Config {
 		if !conf.Section(ini.DEFAULT_SECTION).HasKey("autocomplete") {
 			core.AutoComplete = true
 			core.Output = JSON
+		}
+		if !conf.Section(ini.DEFAULT_SECTION).HasKey("postrequest") {
+			core.PostRequest = true
 		}
 		cfg.Core = core
 	}

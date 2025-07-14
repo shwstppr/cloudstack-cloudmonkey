@@ -203,7 +203,11 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 			params.Add(key, value)
 		}
 	}
+	signatureversion := "3"
+	expiresKey := "expires"
 	params.Add("response", "json")
+	params.Add("signatureversion", signatureversion)
+	params.Add(expiresKey, time.Now().UTC().Add(15 * time.Minute).Format(time.RFC3339))
 
 	var encodedParams string
 	var err error
@@ -220,8 +224,13 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 		mac := hmac.New(sha1.New, []byte(secretKey))
 		mac.Write([]byte(strings.ToLower(encodedParams)))
 		signature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-		encodedParams = encodedParams + fmt.Sprintf("&signature=%s", url.QueryEscape(signature))
-		params = nil
+		if r.Config.Core.PostRequest {
+			params.Add("signature", signature)
+		} else {
+			encodedParams = encodedParams + fmt.Sprintf("&signature=%s", url.QueryEscape(signature))
+			params = nil
+		}
+
 	} else if len(r.Config.ActiveProfile.Username) > 0 && len(r.Config.ActiveProfile.Password) > 0 {
 		sessionKey, err := Login(r)
 		if err != nil {
@@ -287,7 +296,7 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 // we can implement further conditions to do POST or GET (or other http commands) here
 func executeRequest(r *Request, requestURL string, params url.Values) (*http.Response, error) {
 	config.SetupContext(r.Config)
-	if params.Has("password") || params.Has("userdata") {
+	if params.Has("password") || params.Has("userdata") || r.Config.Core.PostRequest {
 		requestURL = fmt.Sprintf("%s", r.Config.ActiveProfile.URL)
 		return r.Client().PostForm(requestURL, params)
 	} else {
