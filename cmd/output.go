@@ -206,22 +206,43 @@ func printCsv(response map[string]interface{}, filter []string) {
 	enc.Flush()
 }
 
+func getItemsFromValue(v interface{}) ([]interface{}, bool) {
+	valueType := reflect.TypeOf(v)
+	if valueType.Kind() == reflect.Slice {
+		sliceItems, ok := v.([]interface{})
+		if !ok {
+			return nil, false
+		}
+		return sliceItems, true
+	} else if valueType.Kind() == reflect.Map {
+		mapItem, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		return []interface{}{mapItem}, true
+	}
+	return nil, false
+}
+
 func filterResponse(response map[string]interface{}, filter []string, outputType string) map[string]interface{} {
-	if filter == nil || len(filter) == 0 {
+	config.Debug("Filtering response with filter:", filter, "and output type:", outputType)
+	if len(filter) == 0 {
 		return response
 	}
 	filteredResponse := make(map[string]interface{})
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, ok := getItemsFromValue(v)
 			if !ok {
+				config.Debug("Skipping non-slice/map value for key:", k)
 				continue
 			}
 			var filteredRows []interface{}
 			for _, item := range items {
 				row, ok := item.(map[string]interface{})
 				if !ok || len(row) < 1 {
+					config.Debug("Skipping non-map item for key:", k)
 					continue
 				}
 				filteredRow := make(map[string]interface{})
