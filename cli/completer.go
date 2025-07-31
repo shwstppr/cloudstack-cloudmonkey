@@ -410,7 +410,7 @@ func (t *autoCompleter) Do(line []rune, pos int) (options [][]rune, offset int) 
 					return argOptions[i].Value < argOptions[j].Value
 				})
 				for _, item := range argOptions {
-					if strings.HasPrefix(item.Value, argInput) {
+					if strings.HasPrefix(item.Value, argInput) || (len(item.Detail) > 0 && strings.HasPrefix(item.Detail, argInput)) {
 						filteredOptions = append(filteredOptions, item)
 					}
 				}
@@ -421,12 +421,14 @@ func (t *autoCompleter) Do(line []rune, pos int) (options [][]rune, offset int) 
 			}
 			for _, item := range filteredOptions {
 				option := item.Value + " "
-				if len(filteredOptions) > 1 && len(item.Detail) > 0 {
+				if len(filteredOptions) > 0 && len(item.Detail) > 0 {
 					option += fmt.Sprintf("(%v)", item.Detail)
 				}
 				if strings.HasPrefix(option, argInput) {
 					options = append(options, []rune(option[len(argInput):]))
 					offset = len(argInput)
+				} else if len(item.Detail) > 0 && strings.HasPrefix(item.Detail, argInput) {
+					options = append(options, []rune(option))
 				}
 			}
 			return
