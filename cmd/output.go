@@ -66,24 +66,27 @@ func printText(response map[string]interface{}) {
 	format := "text"
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
-		if valueType.Kind() == reflect.Slice {
-			fmt.Printf("%v:\n", k)
-			for idx, item := range v.([]interface{}) {
-				if idx > 0 {
-					fmt.Println("================================================================================")
-				}
-				row, isMap := item.(map[string]interface{})
-				if isMap {
-					for field, value := range row {
-						fmt.Printf("%s = %v\n", field, jsonify(value, format))
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, ok := getItemsFromValue(v)
+			if ok {
+				fmt.Printf("%v:\n", k)
+				for idx, item := range items {
+					if idx > 0 {
+						fmt.Println("================================================================================")
 					}
-				} else {
-					fmt.Printf("%v\n", item)
+					row, isMap := item.(map[string]interface{})
+					if isMap {
+						for field, value := range row {
+							fmt.Printf("%s = %v\n", field, jsonify(value, format))
+						}
+					} else {
+						fmt.Printf("%v\n", item)
+					}
 				}
+				return
 			}
-		} else {
-			fmt.Printf("%v = %v\n", k, jsonify(v, format))
 		}
+		fmt.Printf("%v = %v\n", k, jsonify(v, format))
 	}
 }
 
@@ -92,8 +95,8 @@ func printTable(response map[string]interface{}, filter []string) {
 	table := tablewriter.NewWriter(os.Stdout)
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
-		if valueType.Kind() == reflect.Slice {
-			items, ok := v.([]interface{})
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -134,7 +137,7 @@ func printColumn(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -173,7 +176,7 @@ func printCsv(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
