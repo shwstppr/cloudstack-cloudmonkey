@@ -263,6 +263,7 @@ func saveConfig(cfg *Config) *Config {
 		conf.Section(defaultCoreConfig.ProfileName).ReflectFrom(&defaultProfile)
 		conf.SaveTo(cfg.ConfigFile)
 	}
+	makeFileGroupPrivate(cfg.ConfigFile)
 
 	conf := readConfig(cfg)
 
@@ -316,6 +317,10 @@ func saveConfig(cfg *Config) *Config {
 			continue
 		}
 		profiles = append(profiles, profile.Name())
+	}
+
+	if cfg.HistoryFile != "" {
+		makeFileGroupPrivate(cfg.HistoryFile)
 	}
 
 	return cfg
@@ -388,6 +393,12 @@ func (c *Config) UpdateConfig(key string, value string, update bool) {
 
 	if update {
 		reloadConfig(c, true)
+	}
+}
+
+func makeFileGroupPrivate(filePath string) {
+	if fi, err := os.Stat(filePath); err == nil && fi.Mode().IsRegular() {
+		_ = os.Chmod(filePath, 0660)
 	}
 }
 
