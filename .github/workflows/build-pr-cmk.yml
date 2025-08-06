@@ -62,6 +62,6 @@ jobs:
             ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ github.event.pull_request.number }}.
 
             ${{ job.status == 'success'
-              && format('🔗 [Download the cmk binary for linux.x86-64 (expires in 10 days)]({0})', steps.upload_artifact.outputs.artifact-url)
+              && format('🔗 Download the [cmk binary for linux.x86-64]({0}) (expires in 10 days)', steps.upload_artifact.outputs.artifact-url)
               || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
           edit-mode: replace
