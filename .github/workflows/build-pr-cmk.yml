@@ -58,6 +58,11 @@ jobs:
           if-no-files-found: error
           retention-days: 10
 
+      - name: Calculate artifact expiry date
+        id: expiry_date
+        run: |
+          echo "expiry_date=$(date -d '+10 days' '+%B %d, %Y')" >> $GITHUB_OUTPUT
+
       - name: Find existing PR comment
         id: find_comment
         if: always()
@@ -79,6 +84,6 @@ jobs:
             ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ github.event.pull_request.number }}.
 
             ${{ job.status == 'success'
-              && format('🔗 Download the [cmk binary for linux.x86-64]({0}) (expires in 10 days)', steps.upload_artifact.outputs.artifact-url)
+              && format('🔗 Download the [cmk binary for linux.x86-64]({0}) (expires on {1})', steps.upload_artifact.outputs.artifact-url, steps.expiry_date.outputs.expiry_date)
               || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
           edit-mode: replace
