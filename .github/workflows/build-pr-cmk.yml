@@ -18,6 +18,7 @@ jobs:
   build:
     if: ${{ github.repository == 'shwstppr/cloudstack-cloudmonkey' }}
     runs-on: ubuntu-24.04
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,53 +28,56 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Get PR number from Push event
+      - name: Get PR number (for push events)
         id: get_pr_number
-        if: ${{ github.event_name == 'push' }} # Only run this on push events
+        if: github.event_name == 'push'
         run: |
-          echo "::set-output name=pr_number::$(gh pr view --json number -q .number || echo "")"
+          PR_NUMBER=$(gh pr list --head "$GITHUB_REF_NAME" --json number -q '.[0].number' || echo "")
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create placeholder PR comment
-        id: create_comment
-        if: ${{ github.event_name == 'pull_request' || || steps.get_pr_number.outputs.pr_number != '' }}
+      - name: Set PR number variable (for all cases)
+        id: set_vars
+        run: |
+          echo "pr_number=${{ github.event.pull_request.number || env.PR_NUMBER }}" >> $GITHUB_OUTPUT
+
+      - name: Create/update comment (start)
         uses: peter-evans/create-or-update-comment@v4
+        if: steps.set_vars.outputs.pr_number != ''
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || steps.get_pr_number.outputs.pr_number }}
+          issue-number: ${{ steps.set_vars.outputs.pr_number }}
           body: |
             <!-- cmk-build-artifact-comment -->
-            ⏳ Build initiated for PR #${{ github.event.pull_request.number }}. Status will be updated here.
-          edit-mode: replace # Creates a new comment if none exists with this marker
+            ⏳ Build initiated for PR #${{ steps.set_vars.outputs.pr_number }}. Status will be updated here.
+          edit-mode: replace
 
       - name: Build cmk binary
         id: build_cmk
         run: go build -v -o cmk ./cmk.go
 
-      - name: Rename binary with platform and PR number
-        if: ${{ success() }} # Only rename if the build was successful
+      - name: Rename binary
         run: |
-          pr_number=${{ github.event.pull_request.number }}
-          mv cmk cmk.linux.x86-64.pr${pr_number}
+          mv cmk cmk.linux.x86-64.pr${{ steps.set_vars.outputs.pr_number }}
 
       - name: Upload cmk binary
-        if: ${{ success() }} # Only upload if the build was successful
         uses: actions/upload-artifact@v4
         with:
-          name: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
-          path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          name: cmk.linux.x86-64.pr${{ steps.set_vars.outputs.pr_number }}
+          path: cmk.linux.x86-64.pr${{ steps.set_vars.outputs.pr_number }}
           if-no-files-found: error
 
-      - name: Update PR comment (Final Status)
-        if: ${{ github.event_name == 'pull_request' || || steps.get_pr_number.outputs.pr_number != '' }}
+      - name: Create/update comment (final status)
         uses: peter-evans/create-or-update-comment@v4
+        if: steps.set_vars.outputs.pr_number != ''
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || steps.get_pr_number.outputs.pr_number }}
+          issue-number: ${{ steps.set_vars.outputs.pr_number }}
           body: |
             <!-- cmk-build-artifact-comment -->
-            ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ github.event.pull_request.number }}.
-            ${{ job.status == 'success' && format('🔗 [Download the cmk binary](https://github.com/{0}/actions/runs/{1})', github.repository, github.run_id) || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
-          edit-mode: replace # Replaces the content of the identified comment
-
+            ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ steps.set_vars.outputs.pr_number }}.
+            ${{ job.status == 'success'
+              && format('🔗 [Download the cmk binary](https://github.com/{0}/actions/runs/{1})', github.repository, github.run_id)
+              || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
+          edit-mode: replace
