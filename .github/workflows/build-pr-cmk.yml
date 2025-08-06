@@ -42,14 +42,22 @@ jobs:
           path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
           if-no-files-found: error
 
+      - name: Get PR number from Push event
+        id: get_pr_number
+        if: ${{ github.event_name == 'push' }} # Only run this on push events
+        run: |
+          echo "::set-output name=pr_number::$(gh pr view --json number -q .number || echo "")"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Comment on PR with artifact link
         uses: peter-evans/create-or-update-comment@v4
-        if: ${{ github.event_name == 'pull_request' }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event.pull_request.number }}
+          issue-number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || steps.get_pr_number.outputs.pr_number }}
           body: |
             <!-- cmk-build-artifact -->
-            ✅ Build complete for PR #${{ github.event.pull_request.number }}
+            ✅ Build complete for PR #${{ github.event_name == 'pull_request' && github.event.pull_request.number || steps.get_pr_number.outputs.pr_number }}
             🔗 [Download the cmk binary](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
           edit-mode: replace
+
