@@ -42,17 +42,6 @@ jobs:
         run: |
           echo "pr_number=${{ github.event.pull_request.number || env.PR_NUMBER }}" >> $GITHUB_OUTPUT
 
-      - name: Create/update comment (start)
-        uses: peter-evans/create-or-update-comment@v4
-        if: steps.set_vars.outputs.pr_number != ''
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ steps.set_vars.outputs.pr_number }}
-          body: |
-            <!-- cmk-build-artifact-comment -->
-            ⏳ Build initiated for PR #${{ steps.set_vars.outputs.pr_number }}. Status will be updated here.
-          edit-mode: replace
-
       - name: Build cmk binary
         id: build_cmk
         run: go build -v -o cmk ./cmk.go
