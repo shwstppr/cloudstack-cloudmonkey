@@ -67,9 +67,12 @@ dist: dist-linux
 
 # Tools
 
+$(BIN):
+	@mkdir -p $(BIN)
+
 GOLINT = $(BIN)/golint
-$(BIN)/golint:  $(BASE) ; $(info $(M) Building golint…)
-	$Q go get github.com/golang/lint/golint
+$(BIN)/golint: | $(BIN) ; $(info $(M) Building golint…)
+	$Q GOBIN=$(BIN) go install golang.org/x/lint/golint@latest
 
 GOCOVMERGE = $(BIN)/gocovmerge
 $(BIN)/gocovmerge: | $(BASE) ; $(info $(M) building gocovmerge…)
