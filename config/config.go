@@ -45,7 +45,8 @@ const (
 	DEFAULT = "default"
 )
 
-const DEFAULT_ACS_API_ENDPOINT = "http://localhost:8080/client/api"
+// DefaultACSAPIEndpoint is the default API endpoint for CloudStack.
+const DefaultACSAPIEndpoint = "http://localhost:8080/client/api"
 
 // ServerProfile describes a management server
 type ServerProfile struct {
@@ -84,10 +85,12 @@ type Config struct {
 	C             chan bool
 }
 
+// GetOutputFormats returns the supported output formats.
 func GetOutputFormats() []string {
 	return []string{"column", "csv", "json", "table", "text", "default"}
 }
 
+// CheckIfValuePresent checks if an element is present in the dataset.
 func CheckIfValuePresent(dataset []string, element string) bool {
 	for _, arg := range dataset {
 		if arg == element {
@@ -158,7 +161,7 @@ func defaultCoreConfig() Core {
 
 func defaultProfile() ServerProfile {
 	return ServerProfile{
-		URL:       DEFAULT_ACS_API_ENDPOINT,
+		URL:       DefaultACSAPIEndpoint,
 		Username:  "admin",
 		Password:  "password",
 		Domain:    "/",
@@ -189,6 +192,7 @@ func GetProfiles() []string {
 	return profiles
 }
 
+// SetupContext initializes the context and signal handling for the config.
 func SetupContext(cfg *Config) {
 	cfg.C = make(chan bool)
 	signals := make(chan os.Signal, 1)

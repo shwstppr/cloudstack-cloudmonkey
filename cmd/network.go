@@ -299,8 +299,7 @@ func executeRequest(r *Request, requestURL string, params url.Values) (*http.Res
 	if params.Has("password") || params.Has("userdata") || r.Config.Core.PostRequest {
 		requestURL = fmt.Sprintf("%s", r.Config.ActiveProfile.URL)
 		return r.Client().PostForm(requestURL, params)
-	} else {
-		req, _ := http.NewRequestWithContext(*r.Config.Context, "GET", requestURL, nil)
-		return r.Client().Do(req)
 	}
+	req, _ := http.NewRequestWithContext(*r.Config.Context, "GET", requestURL, nil)
+	return r.Client().Do(req)
 }
