@@ -1,6 +1,9 @@
 name: Build cmk on PR
 
 on:
+  push:
+    branches:
+      - '**'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
