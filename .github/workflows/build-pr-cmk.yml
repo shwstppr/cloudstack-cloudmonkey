@@ -38,28 +38,28 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Build cmk binary
-        id: build_cmk
-        run: go build -v -o cmk ./cmk.go
+      - name: Build dist
+        run: make dist
         continue-on-error: true
 
-      - name: Rename binary
+      - name: Zip dist directory
         if: success()
         run: |
-          mv cmk cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          zip -r cmk-dist.pr${{ github.event.pull_request.number }}.zip dist/
 
-      - name: Upload cmk binary
+      - name: Upload zipped dist artifact
         id: upload_artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
-          path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          name: cmk-binaries.pr${{ github.event.pull_request.number }}
+          path: cmk-binaries.pr${{ github.event.pull_request.number }}.zip
           if-no-files-found: error
           retention-days: 10
 
       - name: Calculate artifact expiry date
         id: expiry_date
+        if: success()
         run: |
           echo "expiry_date=$(date -d '+10 days' '+%B %d, %Y')" >> $GITHUB_OUTPUT
 
@@ -84,6 +84,7 @@ jobs:
             ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ github.event.pull_request.number }}.
 
             ${{ job.status == 'success'
-              && format('🔗 Download the [cmk binary for linux.x86-64]({0}) (expires on {1})', steps.upload_artifact.outputs.artifact-url, steps.expiry_date.outputs.expiry_date)
+              && format('🔗 Download the [cmk binaries]({0}) (expires on {1})', steps.upload_artifact.outputs.artifact-url, steps.expiry_date.outputs.expiry_date)
               || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
           edit-mode: replace
+
