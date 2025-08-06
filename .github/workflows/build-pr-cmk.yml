@@ -1,0 +1,52 @@
+name: Build cmk on PR
+
+on:
+  pull_request:
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    if: ${{ github.repository == 'shwstppr/cloudstack-cloudmonkey' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build cmk binary
+        run: go build -v -o cmk ./cmk.go
+
+      - name: Rename binary with platform and PR number
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          mv cmk cmk.linux.x86-64.pr${pr_number}
+
+      - name: Upload cmk binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          if-no-files-found: error
+
+      - name: Comment on PR with artifact link
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <!-- cmk-build-artifact -->
+            ✅ Build complete for PR #${{ github.event.pull_request.number }}
+            🔗 [Download the cmk binary](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          edit-mode: replace
