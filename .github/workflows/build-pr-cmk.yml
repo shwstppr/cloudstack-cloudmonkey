@@ -28,6 +28,7 @@ jobs:
           go-version: '1.22'
 
       - name: Build cmk binary
+        id: build_step # Add an ID to the build step to check its status
         run: go build -v -o cmk ./cmk.go
 
       - name: Rename binary with platform and PR number
@@ -42,22 +43,28 @@ jobs:
           path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
           if-no-files-found: error
 
-      - name: Get PR number from Push event
-        id: get_pr_number
-        if: ${{ github.event_name == 'push' }} # Only run this on push events
-        run: |
-          echo "::set-output name=pr_number::$(gh pr view --json number -q .number || echo "")"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create or update PR comment (Success)
+        if: ${{ success() && github.event_name == 'pull_request' }} # Only run on PR event and if build succeeds
+        uses: peter-evans/create-or-update-comment@v4
+        id: pr_comment # Give this step an ID to access its outputs
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <!-- cmk-build-artifact -->
+            ✅ Build complete for PR #${{ github.event.pull_request.number }}
+            🔗 [Download the cmk binary](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          edit-mode: replace
 
-      - name: Comment on PR with artifact link
+      - name: Update PR comment (Failure)
+        if: ${{ failure() && github.event_name == 'pull_request' }} # Only run on PR event and if build fails
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || steps.get_pr_number.outputs.pr_number }}
+          issue-number: ${{ github.event.pull_request.number }}
           body: |
             <!-- cmk-build-artifact -->
-            ✅ Build complete for PR #${{ github.event_name == 'pull_request' && github.event.pull_request.number || steps.get_pr_number.outputs.pr_number }}
-            🔗 [Download the cmk binary](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          edit-mode: replace
+            ❌ Build failed for PR #${{ github.event.pull_request.number }}
+            See the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+          edit-mode: replace # Replaces the previous comment
 
