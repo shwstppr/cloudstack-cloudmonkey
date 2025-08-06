@@ -62,6 +62,24 @@ func printJSON(response map[string]interface{}) {
 	enc.Encode(response)
 }
 
+func getItemsFromValue(v interface{}) ([]interface{}, bool) {
+	valueType := reflect.TypeOf(v)
+	if valueType.Kind() == reflect.Slice {
+		sliceItems, ok := v.([]interface{})
+		if !ok {
+			return nil, false
+		}
+		return sliceItems, true
+	} else if valueType.Kind() == reflect.Map {
+		mapItem, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		return []interface{}{mapItem}, true
+	}
+	return nil, false
+}
+
 func printText(response map[string]interface{}) {
 	format := "text"
 	for k, v := range response {
@@ -209,72 +227,70 @@ func printCsv(response map[string]interface{}, filter []string) {
 	enc.Flush()
 }
 
-func getItemsFromValue(v interface{}) ([]interface{}, bool) {
-	valueType := reflect.TypeOf(v)
-	if valueType.Kind() == reflect.Slice {
-		sliceItems, ok := v.([]interface{})
-		if !ok {
-			return nil, false
-		}
-		return sliceItems, true
-	} else if valueType.Kind() == reflect.Map {
-		mapItem, ok := v.(map[string]interface{})
-		if !ok {
-			return nil, false
-		}
-		return []interface{}{mapItem}, true
-	}
-	return nil, false
-}
-
-func filterResponse(response map[string]interface{}, filter []string, outputType string) map[string]interface{} {
-	config.Debug("Filtering response with filter:", filter, "and output type:", outputType)
-	if len(filter) == 0 {
+func filterResponse(response map[string]interface{}, filter []string, excludeFilter []string, outputType string) map[string]interface{} {
+	if len(filter) == 0 && len(excludeFilter) == 0 {
 		return response
 	}
+
+	excludeSet := make(map[string]struct{}, len(excludeFilter))
+	for _, key := range excludeFilter {
+		excludeSet[key] = struct{}{}
+	}
+
+	filterSet := make(map[string]struct{}, len(filter))
+	for _, key := range filter {
+		filterSet[key] = struct{}{}
+	}
+
 	filteredResponse := make(map[string]interface{})
-	for k, v := range response {
-		valueType := reflect.TypeOf(v)
+
+	for key, value := range response {
+		valueType := reflect.TypeOf(value)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := getItemsFromValue(v)
+			items, ok := getItemsFromValue(value)
 			if !ok {
-				config.Debug("Skipping non-slice/map value for key:", k)
 				continue
 			}
 			var filteredRows []interface{}
 			for _, item := range items {
 				row, ok := item.(map[string]interface{})
-				if !ok || len(row) < 1 {
-					config.Debug("Skipping non-map item for key:", k)
+				if !ok || len(row) == 0 {
 					continue
 				}
+
 				filteredRow := make(map[string]interface{})
-				for _, filterKey := range filter {
-					for field := range row {
-						if filterKey == field {
-							filteredRow[field] = row[field]
+
+				if len(filter) > 0 {
+					// Include only keys that exist in filterSet
+					for filterKey := range filterSet {
+						if val, exists := row[filterKey]; exists {
+							filteredRow[filterKey] = val
+						} else if outputType == config.COLUMN || outputType == config.CSV || outputType == config.TABLE {
+							filteredRow[filterKey] = "" // Ensure all filter keys exist in row
 						}
 					}
-					if outputType == config.COLUMN || outputType == config.CSV || outputType == config.TABLE {
-						if _, ok := filteredRow[filterKey]; !ok {
-							filteredRow[filterKey] = ""
+				} else {
+					// Exclude keys from excludeFilter
+					for field, val := range row {
+						if _, excluded := excludeSet[field]; !excluded {
+							filteredRow[field] = val
 						}
 					}
 				}
+
 				filteredRows = append(filteredRows, filteredRow)
 			}
-			filteredResponse[k] = filteredRows
+			filteredResponse[key] = filteredRows
 		} else {
-			filteredResponse[k] = v
-			continue
+			filteredResponse[key] = value
 		}
-
 	}
+
 	return filteredResponse
 }
 
-func printResult(outputType string, response map[string]interface{}, filter []string) {
-	response = filterResponse(response, filter, outputType)
+func printResult(outputType string, response map[string]interface{}, filter []string, excludeFilter []string) {
+	response = filterResponse(response, filter, excludeFilter, outputType)
 	switch outputType {
 	case config.JSON:
 		printJSON(response)
