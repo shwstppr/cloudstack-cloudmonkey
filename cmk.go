@@ -16,7 +16,7 @@
 // under the License.
 
 package main
-RANDOM
+
 import (
 	"flag"
 	"fmt"
