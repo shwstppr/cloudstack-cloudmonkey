@@ -42,18 +42,13 @@ jobs:
         run: make dist
         continue-on-error: true
 
-      - name: Zip dist directory
-        if: success()
-        run: |
-          zip -r cmk-binaries.pr${{ github.event.pull_request.number }}.zip dist/
-
       - name: Upload zipped dist artifact
         id: upload_artifact
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: cmk-binaries.pr${{ github.event.pull_request.number }}
-          path: cmk-binaries.pr${{ github.event.pull_request.number }}.zip
+          path: dist/
           if-no-files-found: error
           retention-days: 10
 
