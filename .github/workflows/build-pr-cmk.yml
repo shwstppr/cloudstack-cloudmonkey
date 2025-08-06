@@ -1,0 +1,67 @@
+name: Build cmk on PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build cmk binary
+        id: build_cmk
+        run: go build -v -o cmk ./cmk.go
+        continue-on-error: true
+
+      - name: Rename binary
+        if: success()
+        run: |
+          mv cmk cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+
+      - name: Upload cmk binary
+        id: upload_artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
+          if-no-files-found: error
+          retention-days: 10
+
+      - name: Find existing PR comment
+        id: find_comment
+        if: always()
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- cmk-build-artifact-comment -->'
+
+      - name: Create/update comment
+        if: always()
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find_comment.outputs.comment-id }}
+          body: |
+            <!-- cmk-build-artifact-comment -->
+            ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ github.event.pull_request.number }}.
+
+            ${{ job.status == 'success'
+              && format('🔗 [Download the cmk binary for linux.x86-64 (expires in 10 days)]({0})', steps.upload_artifact.outputs.artifact-url)
+              || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
+          edit-mode: replace
