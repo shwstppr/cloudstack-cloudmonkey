@@ -27,44 +27,45 @@ jobs:
         with:
           go-version: '1.22'
 
+      - name: Create placeholder PR comment
+        id: create_comment
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <!-- cmk-build-artifact-comment -->
+            ⏳ Build initiated for PR #${{ github.event.pull_request.number }}. Status will be updated here.
+          edit-mode: replace # Creates a new comment if none exists with this marker
+
       - name: Build cmk binary
-        id: build_step # Add an ID to the build step to check its status
+        id: build_cmk
         run: go build -v -o cmk ./cmk.go
 
       - name: Rename binary with platform and PR number
+        if: ${{ success() }} # Only rename if the build was successful
         run: |
           pr_number=${{ github.event.pull_request.number }}
           mv cmk cmk.linux.x86-64.pr${pr_number}
 
       - name: Upload cmk binary
+        if: ${{ success() }} # Only upload if the build was successful
         uses: actions/upload-artifact@v4
         with:
           name: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
           path: cmk.linux.x86-64.pr${{ github.event.pull_request.number }}
           if-no-files-found: error
 
-      - name: Create or update PR comment (Success)
-        if: ${{ success() && github.event_name == 'pull_request' }} # Only run on PR event and if build succeeds
-        uses: peter-evans/create-or-update-comment@v4
-        id: pr_comment # Give this step an ID to access its outputs
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            <!-- cmk-build-artifact -->
-            ✅ Build complete for PR #${{ github.event.pull_request.number }}
-            🔗 [Download the cmk binary](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          edit-mode: replace
-
-      - name: Update PR comment (Failure)
-        if: ${{ failure() && github.event_name == 'pull_request' }} # Only run on PR event and if build fails
+      - name: Update PR comment (Final Status)
+        if: ${{ github.event_name == 'pull_request' }} # Only update comment for PR events
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            <!-- cmk-build-artifact -->
-            ❌ Build failed for PR #${{ github.event.pull_request.number }}
-            See the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
-          edit-mode: replace # Replaces the previous comment
+            <!-- cmk-build-artifact-comment -->
+            ${{ job.status == 'success' && '✅ Build complete' || '❌ Build failed' }} for PR #${{ github.event.pull_request.number }}.
+            ${{ job.status == 'success' && format('🔗 [Download the cmk binary](https://github.com/{0}/actions/runs/{1})', github.repository, github.run_id) || format('See the [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
+          edit-mode: replace # Replaces the content of the identified comment
 
