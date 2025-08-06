@@ -44,6 +44,7 @@ jobs:
 
       - name: Upload cmk binary
         uses: actions/upload-artifact@v4
+        if: steps.set_vars.outputs.pr_number != ''
         with:
           name: cmk.linux.x86-64.pr${{ steps.set_vars.outputs.pr_number }}
           path: cmk.linux.x86-64.pr${{ steps.set_vars.outputs.pr_number }}
