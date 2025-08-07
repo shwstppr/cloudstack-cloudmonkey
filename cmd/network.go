@@ -84,6 +84,9 @@ func getResponseBooleanValue(response map[string]interface{}, key string) (bool,
 }
 
 func checkLogin2FAPromptAndValidate(r *Request, response map[string]interface{}, sessionKey string) error {
+	if !r.Config.HasShell {
+		return nil
+	}
 	config.Debug("Checking if 2FA is enabled and verified for the user ", response)
 	found, is2faEnabled := getResponseBooleanValue(response, "is2faenabled")
 	if !found || !is2faEnabled {
