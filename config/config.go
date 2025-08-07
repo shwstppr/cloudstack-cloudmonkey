@@ -45,6 +45,13 @@ const (
 	DEFAULT = "default"
 )
 
+var NonEmptyConfigKeys = map[string]bool{
+	"output":  true,
+	"timeout": true,
+	"profile": true,
+	"url":     true,
+}
+
 // DefaultACSAPIEndpoint is the default API endpoint for CloudStack.
 const DefaultACSAPIEndpoint = "http://localhost:8080/client/api"
 
