@@ -211,6 +211,7 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 
 	var encodedParams string
 	var err error
+	usingApiKeySecretKey := false
 
 	if len(r.Config.ActiveProfile.APIKey) > 0 && len(r.Config.ActiveProfile.SecretKey) > 0 {
 		apiKey := r.Config.ActiveProfile.APIKey
@@ -230,7 +231,7 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 			encodedParams = encodedParams + fmt.Sprintf("&signature=%s", url.QueryEscape(signature))
 			params = nil
 		}
-
+		usingApiKeySecretKey = true
 	} else if len(r.Config.ActiveProfile.Username) > 0 && len(r.Config.ActiveProfile.Password) > 0 {
 		sessionKey, err := Login(r)
 		if err != nil {
@@ -253,7 +254,7 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 	}
 	config.Debug("NewAPIRequest response status code:", response.StatusCode)
 
-	if response.StatusCode == http.StatusUnauthorized {
+	if response.StatusCode == http.StatusUnauthorized && !usingApiKeySecretKey {
 		r.Client().Jar, _ = cookiejar.New(nil)
 		sessionKey, err := Login(r)
 		if err != nil {
