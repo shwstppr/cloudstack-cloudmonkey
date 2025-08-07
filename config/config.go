@@ -267,6 +267,7 @@ func saveConfig(cfg *Config) *Config {
 		conf.Section(defaultCoreConfig.ProfileName).ReflectFrom(&defaultProfile)
 		conf.SaveTo(cfg.ConfigFile)
 	}
+	makeFileUserPrivate(cfg.ConfigFile)
 
 	conf := readConfig(cfg)
 
@@ -320,6 +321,10 @@ func saveConfig(cfg *Config) *Config {
 			continue
 		}
 		profiles = append(profiles, profile.Name())
+	}
+
+	if cfg.HistoryFile != "" {
+		makeFileUserPrivate(cfg.HistoryFile)
 	}
 
 	return cfg
@@ -392,6 +397,14 @@ func (c *Config) UpdateConfig(key string, value string, update bool) {
 
 	if update {
 		reloadConfig(c, true)
+	}
+}
+
+func makeFileUserPrivate(filePath string) {
+	if fi, err := os.Stat(filePath); err == nil && fi.Mode().IsRegular() {
+		if err := os.Chmod(filePath, 0600); err != nil {
+			fmt.Printf("Failed to set permissions on %s: %v\n", filePath, err)
+		}
 	}
 }
 
