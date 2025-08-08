@@ -157,7 +157,16 @@ func pollAsyncJob(r *Request, jobID string) (map[string]interface{}, error) {
 			return nil, errors.New("async API job query timed out")
 
 		case <-ticker.C:
-			queryResult, queryError := NewAPIRequest(r, "queryAsyncJobResult", []string{"jobid=" + jobID}, false)
+			args := []string{"jobid=" + jobID}
+			if r.Args != nil {
+				for _, arg := range r.Args {
+					if strings.HasPrefix(strings.ToLower(arg), "filter=") {
+						args = append(args, arg)
+						break
+					}
+				}
+			}
+			queryResult, queryError := NewAPIRequest(r, "queryAsyncJobResult", args, false)
 			if queryError != nil {
 				return queryResult, queryError
 			}

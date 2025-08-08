@@ -62,28 +62,49 @@ func printJSON(response map[string]interface{}) {
 	enc.Encode(response)
 }
 
+func getItemsFromValue(v interface{}) ([]interface{}, bool) {
+	valueType := reflect.TypeOf(v)
+	if valueType.Kind() == reflect.Slice {
+		sliceItems, ok := v.([]interface{})
+		if !ok {
+			return nil, false
+		}
+		return sliceItems, true
+	} else if valueType.Kind() == reflect.Map {
+		mapItem, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		return []interface{}{mapItem}, true
+	}
+	return nil, false
+}
+
 func printText(response map[string]interface{}) {
 	format := "text"
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
-		if valueType.Kind() == reflect.Slice {
-			fmt.Printf("%v:\n", k)
-			for idx, item := range v.([]interface{}) {
-				if idx > 0 {
-					fmt.Println("================================================================================")
-				}
-				row, isMap := item.(map[string]interface{})
-				if isMap {
-					for field, value := range row {
-						fmt.Printf("%s = %v\n", field, jsonify(value, format))
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, ok := getItemsFromValue(v)
+			if ok {
+				fmt.Printf("%v:\n", k)
+				for idx, item := range items {
+					if idx > 0 {
+						fmt.Println("================================================================================")
 					}
-				} else {
-					fmt.Printf("%v\n", item)
+					row, isMap := item.(map[string]interface{})
+					if isMap {
+						for field, value := range row {
+							fmt.Printf("%s = %v\n", field, jsonify(value, format))
+						}
+					} else {
+						fmt.Printf("%v\n", item)
+					}
 				}
+				return
 			}
-		} else {
-			fmt.Printf("%v = %v\n", k, jsonify(v, format))
 		}
+		fmt.Printf("%v = %v\n", k, jsonify(v, format))
 	}
 }
 
@@ -92,8 +113,8 @@ func printTable(response map[string]interface{}, filter []string) {
 	table := tablewriter.NewWriter(os.Stdout)
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
-		if valueType.Kind() == reflect.Slice {
-			items, ok := v.([]interface{})
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -134,7 +155,7 @@ func printColumn(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -173,7 +194,7 @@ func printCsv(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -207,7 +228,7 @@ func printCsv(response map[string]interface{}, filter []string) {
 }
 
 func filterResponse(response map[string]interface{}, filter []string, excludeFilter []string, outputType string) map[string]interface{} {
-	if (filter == nil || len(filter) == 0) && (excludeFilter == nil || len(excludeFilter) == 0) {
+	if len(filter) == 0 && len(excludeFilter) == 0 {
 		return response
 	}
 
@@ -224,8 +245,12 @@ func filterResponse(response map[string]interface{}, filter []string, excludeFil
 	filteredResponse := make(map[string]interface{})
 
 	for key, value := range response {
-		switch items := value.(type) {
-		case []interface{}:
+		valueType := reflect.TypeOf(value)
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, ok := getItemsFromValue(value)
+			if !ok {
+				continue
+			}
 			var filteredRows []interface{}
 			for _, item := range items {
 				row, ok := item.(map[string]interface{})
@@ -256,8 +281,7 @@ func filterResponse(response map[string]interface{}, filter []string, excludeFil
 				filteredRows = append(filteredRows, filteredRow)
 			}
 			filteredResponse[key] = filteredRows
-
-		default:
+		} else {
 			filteredResponse[key] = value
 		}
 	}
