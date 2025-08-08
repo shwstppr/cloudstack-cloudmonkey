@@ -15,28 +15,29 @@
 # specific language governing permissions and limitations
 # under the License.
 
-name: Build cmk on PR
+name: Build cmk binaries on PR
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-
 jobs:
   build:
+    permissions:
+      contents: read
     runs-on: ubuntu-24.04
-
+    env:
+      GITHUB_TOKEN: ""
     steps:
-      - name: Checkout code
+      - name: Checkout PR HEAD
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -44,35 +45,55 @@ jobs:
           go-version: '1.22'
 
       - name: Build dist
+        id: build
         run: make dist
         continue-on-error: true
 
       - name: Upload zipped dist artifact
         id: upload_artifact
-        uses: actions/upload-artifact@v4
         if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: cmk-binaries.pr${{ github.event.pull_request.number }}
           path: dist/
           if-no-files-found: error
           retention-days: 10
 
+      - name: Expose build outcome & artifact link
+        id: meta
+        if: always()
+        run: |
+          echo "outcome=${{ steps.build.outcome }}" >> $GITHUB_OUTPUT
+          # upload-artifact v4 exposes artifact-url output; echo empty if missing
+          echo "artifact_url=${{ steps.upload_artifact.outputs.artifact-url }}" >> $GITHUB_OUTPUT
+
+  comment:
+    needs: build
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-24.04
+    steps:
       - name: Comment or update cmk build artifact on PR
         uses: actions/github-script@v7
         with:
           script: |
             const { execSync } = require('child_process');
-
             const issue_number = context.payload.pull_request.number;
             const identifier = "cmk-build-artifact-comment";
-            const jobStatus = "${{ job.status }}";
-            const artifactUrl = "${{ steps.upload_artifact.outputs.artifact-url }}";
+            const outcome = "${{ needs.build.outputs.outcome || steps.build.outcome }}".trim() || "${{ needs.build.outputs.outcome }}";
+            // Prefer job output from previous step:
+            const buildOutcome = "${{ needs.build.outputs.outcome }}";
+            const artifactUrl = "${{ needs.build.outputs.artifact_url }}";
             const runId = "${{ github.run_id }}";
             const repo = "${{ github.repository }}";
 
+            // Fallback: use provided build outcome var if needs.* resolution is odd
+            const finalOutcome = buildOutcome || outcome || 'failure';
+
             let commentBody = `<!-- ${identifier} -->\n`;
 
-            if (jobStatus === 'success') {
+            if (finalOutcome === 'success' && artifactUrl) {
               const expiryDate = execSync("date -d '+10 days' '+%B %d, %Y'").toString().trim();
               commentBody += `✅ Build complete for PR #${issue_number}.\n\n`;
               commentBody += `🔗 Download the [cmk binaries](${artifactUrl}) (expires on ${expiryDate})`;
