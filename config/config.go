@@ -46,6 +46,13 @@ const (
 	DEFAULT = "default"
 )
 
+var nonEmptyConfigKeys = map[string]bool{
+	"output":  true,
+	"timeout": true,
+	"profile": true,
+	"url":     true,
+}
+
 // DefaultACSAPIEndpoint is the default API endpoint for CloudStack.
 const DefaultACSAPIEndpoint = "http://localhost:8080/client/api"
 
@@ -349,6 +356,10 @@ func (c *Config) LoadProfile(name string) {
 
 // UpdateConfig updates and saves config
 func (c *Config) UpdateConfig(key string, value string, update bool) {
+	if nonEmptyConfigKeys[key] && value == "" {
+		fmt.Printf("Error: value for '%s' must not be empty\n", key)
+		return
+	}
 	switch key {
 	case "prompt":
 		c.Core.Prompt = value
