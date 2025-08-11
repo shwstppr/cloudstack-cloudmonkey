@@ -62,22 +62,22 @@ func printJSON(response map[string]interface{}) {
 	enc.Encode(response)
 }
 
-func getItemsFromValue(v interface{}) ([]interface{}, bool) {
-	valueType := reflect.TypeOf(v)
-	if valueType.Kind() == reflect.Slice {
+func getItemsFromValue(v interface{}) ([]interface{}, reflect.Kind, bool) {
+	valueKind := reflect.TypeOf(v).Kind()
+	if valueKind == reflect.Slice {
 		sliceItems, ok := v.([]interface{})
 		if !ok {
-			return nil, false
+			return nil, valueKind, false
 		}
-		return sliceItems, true
-	} else if valueType.Kind() == reflect.Map {
+		return sliceItems, valueKind, true
+	} else if valueKind == reflect.Map {
 		mapItem, ok := v.(map[string]interface{})
 		if !ok {
-			return nil, false
+			return nil, valueKind, false
 		}
-		return []interface{}{mapItem}, true
+		return []interface{}{mapItem}, valueKind, true
 	}
-	return nil, false
+	return nil, valueKind, false
 }
 
 func printText(response map[string]interface{}) {
@@ -85,7 +85,7 @@ func printText(response map[string]interface{}) {
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := getItemsFromValue(v)
+			items, _, ok := getItemsFromValue(v)
 			if ok {
 				fmt.Printf("%v:\n", k)
 				for idx, item := range items {
@@ -114,7 +114,7 @@ func printTable(response map[string]interface{}, filter []string) {
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := getItemsFromValue(v)
+			items, _, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -155,7 +155,7 @@ func printColumn(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := getItemsFromValue(v)
+			items, _, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -194,7 +194,7 @@ func printCsv(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := getItemsFromValue(v)
+			items, _, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -247,7 +247,7 @@ func filterResponse(response map[string]interface{}, filter []string, excludeFil
 	for key, value := range response {
 		valueType := reflect.TypeOf(value)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := getItemsFromValue(value)
+			items, originalKind, ok := getItemsFromValue(value)
 			if !ok {
 				continue
 			}
@@ -280,7 +280,11 @@ func filterResponse(response map[string]interface{}, filter []string, excludeFil
 
 				filteredRows = append(filteredRows, filteredRow)
 			}
-			filteredResponse[key] = filteredRows
+			if originalKind == reflect.Map && len(filteredRows) > 0 {
+				filteredResponse[key] = filteredRows[0]
+			} else {
+				filteredResponse[key] = filteredRows
+			}
 		} else {
 			filteredResponse[key] = value
 		}
