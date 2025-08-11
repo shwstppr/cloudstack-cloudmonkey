@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/gofrs/flock"
 	homedir "github.com/mitchellh/go-homedir"
 	ini "gopkg.in/ini.v1"
@@ -44,6 +45,13 @@ const (
 	TEXT    = "text"
 	DEFAULT = "default"
 )
+
+var nonEmptyConfigKeys = map[string]bool{
+	"output":  true,
+	"timeout": true,
+	"profile": true,
+	"url":     true,
+}
 
 // DefaultACSAPIEndpoint is the default API endpoint for CloudStack.
 const DefaultACSAPIEndpoint = "http://localhost:8080/client/api"
@@ -73,16 +81,17 @@ type Core struct {
 
 // Config describes CLI config file and default options
 type Config struct {
-	Dir           string
-	ConfigFile    string
-	HistoryFile   string
-	LogFile       string
-	HasShell      bool
-	Core          *Core
-	ActiveProfile *ServerProfile
-	Context       *context.Context
-	Cancel        context.CancelFunc
-	C             chan bool
+	Dir            string
+	ConfigFile     string
+	HistoryFile    string
+	LogFile        string
+	HasShell       bool
+	Core           *Core
+	ActiveProfile  *ServerProfile
+	Context        *context.Context
+	Cancel         context.CancelFunc
+	C              chan bool
+	activeSpinners []*spinner.Spinner
 }
 
 // GetOutputFormats returns the supported output formats.
@@ -347,6 +356,10 @@ func (c *Config) LoadProfile(name string) {
 
 // UpdateConfig updates and saves config
 func (c *Config) UpdateConfig(key string, value string, update bool) {
+	if nonEmptyConfigKeys[key] && value == "" {
+		fmt.Printf("Error: value for '%s' must not be empty\n", key)
+		return
+	}
 	switch key {
 	case "prompt":
 		c.Core.Prompt = value

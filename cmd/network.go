@@ -49,6 +49,84 @@ func findSessionCookie(cookies []*http.Cookie) *http.Cookie {
 	return nil
 }
 
+func getLoginResponse(responseBody []byte) (map[string]interface{}, error) {
+	var responseMap map[string]interface{}
+	err := json.Unmarshal(responseBody, &responseMap)
+	if err != nil {
+		return nil, errors.New("failed to parse login response: " + err.Error())
+	}
+	loginRespRaw, ok := responseMap["loginresponse"]
+	if !ok {
+		return nil, errors.New("failed to parse login response, expected 'loginresponse' key not found")
+	}
+	loginResponse, ok := loginRespRaw.(map[string]interface{})
+	if !ok {
+		return nil, errors.New("failed to parse login response, expected 'loginresponse' to be a map")
+	}
+	return loginResponse, nil
+}
+
+func getResponseBooleanValue(response map[string]interface{}, key string) (bool, bool) {
+	v, found := response[key]
+	if !found {
+		return false, false
+	}
+	switch value := v.(type) {
+	case bool:
+		return true, value
+	case string:
+		return true, strings.ToLower(value) == "true"
+	case float64:
+		return true, value != 0
+	default:
+		return true, false
+	}
+}
+
+func checkLogin2FAPromptAndValidate(r *Request, response map[string]interface{}, sessionKey string) error {
+	if !r.Config.HasShell {
+		return nil
+	}
+	config.Debug("Checking if 2FA is enabled and verified for the user ", response)
+	found, is2faEnabled := getResponseBooleanValue(response, "is2faenabled")
+	if !found || !is2faEnabled {
+		config.Debug("2FA is not enabled for the user, skipping 2FA validation")
+		return nil
+	}
+	found, is2faVerified := getResponseBooleanValue(response, "is2faverified")
+	if !found || is2faVerified {
+		config.Debug("2FA is already verified for the user, skipping 2FA validation")
+		return nil
+	}
+	activeSpinners := r.Config.PauseActiveSpinners()
+	fmt.Print("Enter 2FA code: ")
+	var code string
+	fmt.Scanln(&code)
+	if activeSpinners > 0 {
+		r.Config.ResumePausedSpinners()
+	}
+	params := make(url.Values)
+	params.Add("command", "validateUserTwoFactorAuthenticationCode")
+	params.Add("codefor2fa", code)
+	params.Add("sessionkey", sessionKey)
+
+	msURL, _ := url.Parse(r.Config.ActiveProfile.URL)
+
+	config.Debug("Validating 2FA with POST URL:", msURL, params)
+	spinner := r.Config.StartSpinner("trying to validate 2FA...")
+	resp, err := r.Client().PostForm(msURL.String(), params)
+	r.Config.StopSpinner(spinner)
+	if err != nil {
+		return errors.New("failed to failed to validate 2FA code: " + err.Error())
+	}
+	config.Debug("ValidateUserTwoFactorAuthenticationCode POST response status code:", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		r.Client().Jar, _ = cookiejar.New(nil)
+		return errors.New("failed to validate 2FA code, please check the code. Invalidating session")
+	}
+	return nil
+}
+
 // Login logs in a user based on provided request and returns http client and session key
 func Login(r *Request) (string, error) {
 	params := make(url.Values)
@@ -81,6 +159,13 @@ func Login(r *Request) (string, error) {
 		return "", e
 	}
 
+	body, _ := ioutil.ReadAll(resp.Body)
+	config.Debug("Login response body:", string(body))
+	loginResponse, err := getLoginResponse(body)
+	if err != nil {
+		return "", err
+	}
+
 	var sessionKey string
 	curTime := time.Now()
 	expiryDuration := 15 * time.Minute
@@ -98,6 +183,9 @@ func Login(r *Request) (string, error) {
 	}()
 
 	config.Debug("Login sessionkey:", sessionKey)
+	if err := checkLogin2FAPromptAndValidate(r, loginResponse, sessionKey); err != nil {
+		return "", err
+	}
 	return sessionKey, nil
 }
 
@@ -157,7 +245,16 @@ func pollAsyncJob(r *Request, jobID string) (map[string]interface{}, error) {
 			return nil, errors.New("async API job query timed out")
 
 		case <-ticker.C:
-			queryResult, queryError := NewAPIRequest(r, "queryAsyncJobResult", []string{"jobid=" + jobID}, false)
+			args := []string{"jobid=" + jobID}
+			if r.Args != nil {
+				for _, arg := range r.Args {
+					if strings.HasPrefix(strings.ToLower(arg), "filter=") {
+						args = append(args, arg)
+						break
+					}
+				}
+			}
+			queryResult, queryError := NewAPIRequest(r, "queryAsyncJobResult", args, false)
 			if queryError != nil {
 				return queryResult, queryError
 			}

@@ -40,6 +40,7 @@ func (c *Config) StartSpinner(suffix string) *spinner.Spinner {
 	waiter := spinner.New(cursor, 200*time.Millisecond)
 	waiter.Suffix = " " + suffix
 	waiter.Start()
+	c.activeSpinners = append(c.activeSpinners, waiter)
 	return waiter
 }
 
@@ -47,5 +48,31 @@ func (c *Config) StartSpinner(suffix string) *spinner.Spinner {
 func (c *Config) StopSpinner(waiter *spinner.Spinner) {
 	if waiter != nil {
 		waiter.Stop()
+		for i, s := range c.activeSpinners {
+			if s == waiter {
+				c.activeSpinners = append(c.activeSpinners[:i], c.activeSpinners[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+// PauseActiveSpinners stops the spinners without removing them from the acive spinners list, allowing resume.
+func (c *Config) PauseActiveSpinners() int {
+	count := len(c.activeSpinners)
+	for _, s := range c.activeSpinners {
+		if s != nil && s.Active() {
+			s.Stop()
+		}
+	}
+	return count
+}
+
+// ResumePausedSpinners restarts the spinners from the active spinners list if they are not already running.
+func (c *Config) ResumePausedSpinners() {
+	for _, s := range c.activeSpinners {
+		if s != nil && !s.Active() {
+			s.Start()
+		}
 	}
 }
