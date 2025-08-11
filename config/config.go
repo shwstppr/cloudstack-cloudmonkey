@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/gofrs/flock"
 	homedir "github.com/mitchellh/go-homedir"
 	ini "gopkg.in/ini.v1"
@@ -73,16 +74,17 @@ type Core struct {
 
 // Config describes CLI config file and default options
 type Config struct {
-	Dir           string
-	ConfigFile    string
-	HistoryFile   string
-	LogFile       string
-	HasShell      bool
-	Core          *Core
-	ActiveProfile *ServerProfile
-	Context       *context.Context
-	Cancel        context.CancelFunc
-	C             chan bool
+	Dir            string
+	ConfigFile     string
+	HistoryFile    string
+	LogFile        string
+	HasShell       bool
+	Core           *Core
+	ActiveProfile  *ServerProfile
+	Context        *context.Context
+	Cancel         context.CancelFunc
+	C              chan bool
+	activeSpinners []*spinner.Spinner
 }
 
 // GetOutputFormats returns the supported output formats.
