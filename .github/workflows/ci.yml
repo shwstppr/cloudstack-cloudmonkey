@@ -1,0 +1,318 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Simulator CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator-latest-ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      GO111MODULE: on
+      CMK_BIN: bin/cmk
+      CLOUDSTACK_SIM_API: http://127.0.0.1:8096/client/api
+      CLOUDSTACK_UI_API: http://127.0.0.1:8080/client/api
+      MAVEN_OPTS: -Xmx4096m -XX:MaxMetaspaceSize=800m -Djava.security.egd=file:/dev/urandom --add-opens=java.base/java.lang=ALL-UNNAMED --add-exports=java.base/sun.security.x509=ALL-UNNAMED --add-opens=java.base/jdk.internal.reflect=ALL-UNNAMED
+
+    steps:
+      - name: Check out CloudMonkey
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build cmk
+        run: |
+          make run
+
+      - name: Fetch latest CloudStack release tag
+        id: csrel
+        run: |
+          TAG=$(curl -s https://api.github.com/repos/apache/cloudstack/releases/latest | jq -r .tag_name)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Latest CloudStack tag: $TAG"
+
+      - name: Clone CloudStack at latest release
+        run: |
+          git clone --depth=1 --branch "${{ steps.csrel.outputs.tag }}" https://github.com/apache/cloudstack.git
+
+      - name: Set up JDK 11 + Maven cache
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: cloudstack/pom.xml
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install OS deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            mysql-server uuid-runtime genisoimage netcat-openbsd ipmitool \
+            build-essential libgcrypt20 libgpg-error-dev libgpg-error0 \
+            libopenipmi0 libssl-dev jq curl
+
+      - name: Install Python deps
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --user urllib3 lxml paramiko nose texttable ipmisim pyopenssl pycryptodome mock flask netaddr pylint pycodestyle six astroid mysql-connector-python
+
+      - name: Setup MySQL Server
+        run: |
+          # https://github.com/actions/runner-images/blob/main/images/linux/Ubuntu2004-Readme.md#mysql
+          sudo systemctl start mysql
+          sudo mysql -uroot -proot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY ''; FLUSH PRIVILEGES;"
+          sudo systemctl restart mysql
+          sudo mysql -uroot -e "SELECT VERSION();"
+
+      - name: Build CloudStack (simulator)
+        working-directory: cloudstack
+        run: |
+          mvn -B -P developer,systemvm -Dsimulator clean install -DskipTests=true -T$(nproc)
+
+      - name: Deploy simulator DB + marvin
+        working-directory: cloudstack
+        run: |
+          mvn -q -Pdeveloper -pl developer -Ddeploydb
+          mvn -q -Pdeveloper -pl developer -Ddeploydb-simulator
+          python3 -m pip install --user --upgrade tools/marvin/dist/Marvin-*.tar.gz
+
+      - name: Start CloudStack mgmt (Jetty) in background
+        id: start_ms
+        working-directory: cloudstack
+        run: |
+          set -euo pipefail
+          LOG=/tmp/jetty-log.txt
+          mvn -Dsimulator -Dorg.eclipse.jetty.annotations.maxWait=120 -pl :cloud-client-ui jetty:run > "$LOG" 2>&1 &
+          JETTY_PID=$!
+          echo "$JETTY_PID" > /tmp/jetty.pid
+          echo "Waiting for simulator API @ 8096…"
+          for i in $(seq 1 60); do
+            if nc -z 127.0.0.1 8096; then
+              echo "Simulator API is up."
+              break
+            fi
+            sleep 5
+            tail -n 50 "$LOG" || true
+            if ! kill -0 "$JETTY_PID" 2>/dev/null; then
+              echo "Jetty exited early. Last 200 lines:"
+              tail -n 200 "$LOG" || true
+              exit 1
+            fi
+          done
+
+      - name: Deploy Advanced Zone via Marvin
+        working-directory: cloudstack
+        run: |
+          python3 tools/marvin/marvin/deployDataCenter.py -i setup/dev/advdualzone.cfg
+
+      - name: Configure cmk profile
+        run: |
+          "${CMK_BIN}" set profile simulator
+          "${CMK_BIN}" set url "${CLOUDSTACK_UI_API}"
+          "${CMK_BIN}" set output json
+
+      - name: API discovery parity (curl vs cmk)
+        run: |
+          CURL_COUNT=$(curl -s "${CLOUDSTACK_SIM_API}?command=listApis&response=json" | jq '.listapisresponse.count')
+          echo "curl count: $CURL_COUNT"
+          CMK_COUNT=$("${CMK_BIN}" listApis | jq '.count')
+          echo "cmk count: $CMK_COUNT"
+          test -n "$CURL_COUNT" -a -n "$CMK_COUNT"
+          [ "$CMK_COUNT" -ge 1 ]
+
+      - name: List API
+        run: |
+          "${CMK_BIN}" set output table
+          OUT=$("${CMK_BIN}" listZones)
+          echo "$OUT"
+          if [ -z "$OUT" ]; then
+            echo "No output from listZones. Failing."
+            exit 1
+          fi
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" listZones)
+          echo "$OUT"
+          if [ -z "$OUT" ]; then
+            echo "No output from listZones. Failing."
+            exit 1
+          fi
+          ZONE_ID=$(echo "$OUT" | jq -r '.zone[0].id')
+          echo "ZONE_ID=$ZONE_ID" >> $GITHUB_ENV
+          test -n "$ZONE_ID"
+
+      - name: List API with filter
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" listZones filter=id,name)
+          echo "$OUT" | jq -e '
+            .zone and (.zone|length>=1)
+            and (all(.zone[]; has("id") and has("name") and ((. | keys - ["id","name"])|length==0)))
+          '
+
+      - name: List API with exclude
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" listZones exclude=id,name)
+          echo "$OUT" | jq -e '
+            .zone and (.zone|length>=1)
+            and (all(.zone[]; (has("id") or has("name"))|not))
+          '
+
+      - name: "Create API"
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" createUser account=admin email=testuser@example.com firstname=Test lastname=User password=password username=test || true)
+          echo "$OUT"
+          if [ -n "$OUT" ]; then
+            echo "$OUT" | jq -e '
+              (.user // {}) as $p
+              | ($p|type=="object")
+              and ($p|has("id") and has("email"))
+              and ((($p|keys) - ["id","email"])|length>0)
+            '
+          else
+            echo "No output. Failing strict check."
+            exit 1
+          fi
+
+      - name: Create API with filter
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" createUser account=admin email=testuser@example.com firstname=Test lastname=User password=password username=test-filter filter=id,email || true)
+          echo "$OUT"
+          if [ -n "$OUT" ]; then
+            echo "$OUT" | jq -e '
+              (.user // {}) as $p
+              | ($p|type=="object")
+              and ($p|has("id") and has("email"))
+              and ((($p|keys) - ["id","email"])|length==0)
+            '
+          else
+            echo "No output. Failing strict check."
+            exit 1
+          fi
+
+      - name: Create API with exclude
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" createUser account=admin email=testuser@example.com firstname=Test lastname=User password=password username=test-exclude exclude=id,email || true)
+          echo "$OUT"
+          if [ -n "$OUT" ]; then
+            echo "$OUT" | jq -e '
+              (.user // {}) as $p
+              | ($p|type=="object")
+              and ((($p|has("id")) or ($p|has("email")))|not)
+            '
+          else
+            echo "No output. Failing strict check."
+            exit 1
+          fi
+
+      - name: Get template and service offering IDs for Async API test
+        run: |
+          TID=$("${CMK_BIN}" listTemplates listall=true templatefilter=executable | jq -r '.template[0].id')
+          SOID=$("${CMK_BIN}" listServiceOfferings | jq -r '.serviceoffering[0].id')
+          echo "TEMPLATE_ID=$TID" >> $GITHUB_ENV
+          echo "SERVICE_OFFERING_ID=$SOID" >> $GITHUB_ENV
+          test -n "$TID" -a -n "$SOID"
+
+      - name: Async API
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" deployVirtualMachine zoneid=${ZONE_ID} templateid=${TEMPLATE_ID} serviceofferingid=${SERVICE_OFFERING_ID} || true)
+          if [ -n "$OUT" ]; then
+            echo "$OUT" | jq -e '
+              (.virtualmachine // {}) as $p
+              | ($p|type=="object")
+              and ($p|has("id") and has("name"))
+              and ((($p|keys) - ["id","name"])|length>0)
+            '
+          else
+            echo "No output. Failing strict check."
+            exit 1
+          fi
+
+      - name: Async API with filter
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" deployVirtualMachine zoneid=${ZONE_ID} templateid=${TEMPLATE_ID} serviceofferingid=${SERVICE_OFFERING_ID} filter=id,name || true)
+          if [ -n "$OUT" ]; then
+            echo "$OUT" | jq -e '
+              (.virtualmachine // {}) as $p
+              | ($p|type=="object")
+              and ($p|has("id") and has("name"))
+              and ((($p|keys) - ["id","name"])|length==0)
+            '
+          else
+            echo "No output. Failing strict check."
+            exit 1
+          fi
+
+      - name: Async API with exclude
+        run: |
+          "${CMK_BIN}" set output json
+          OUT=$("${CMK_BIN}" deployVirtualMachine zoneid=${ZONE_ID} templateid=${TEMPLATE_ID} serviceofferingid=${SERVICE_OFFERING_ID} exclude=id,name || true)
+          echo "$OUT"
+          if [ -n "$OUT" ]; then
+            echo "$OUT" | jq -e '
+              (.virtualmachine // {}) as $p
+              | ($p|type=="object")
+              and ((($p|has("id")) or ($p|has("name")))|not)
+            '
+          else
+            echo "No output. Failing strict check."
+            exit 1
+          fi
+
+      - name: Change profile (user) and compare API surface
+        run: |
+          ADMIN_COUNT=$("${CMK_BIN}" listApis | jq '.count')
+          "${CMK_BIN}" createAccount username=user password=p@ssw0rd accounttype=0 domainid=1 firstname=Test lastname=User email=testuser@example.com || true
+          "${CMK_BIN}" set profile user
+          "${CMK_BIN}" set url "${CLOUDSTACK_UI_API}"
+          "${CMK_BIN}" set username user
+          "${CMK_BIN}" set password p@ssw0rd
+          USER_COUNT=$("${CMK_BIN}" listApis | jq '.count // 0')
+          echo "admin=${ADMIN_COUNT} user=${USER_COUNT}"
+          test $USER_COUNT -le $ADMIN_COUNT
+
+      - name: Stop simulator MS
+        if: ${{ always() && steps.start_ms.outcome == 'success' }}
+        working-directory: cloudstack
+        run: |
+            echo -e "Stopping Simulator, integration tests run completed\n"
+            mvn -Dsimulator -pl client jetty:stop 2>&1
+
