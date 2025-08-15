@@ -278,7 +278,21 @@ func pollAsyncJob(r *Request, jobID string) (map[string]interface{}, error) {
 func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[string]interface{}, error) {
 	params := make(url.Values)
 	params.Add("command", api)
+	apiData := r.Config.GetCache()[api]
 	for _, arg := range args {
+		if apiData != nil {
+			skip := false
+			for _, fakeArg := range apiData.FakeArgs {
+				if strings.HasPrefix(arg, fakeArg) {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+
+		}
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) == 2 {
 			key := parts[0]
