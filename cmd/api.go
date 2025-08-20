@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/apache/cloudstack-cloudmonkey/config"
 )
 
 var apiCommand *Command
@@ -46,10 +48,22 @@ func init() {
 				apiArgs = r.Args[2:]
 			}
 
-			for _, arg := range r.Args {
+			var uploadFiles []string
+
+			for _, arg := range apiArgs {
 				if arg == "-h" {
 					r.Args[0] = apiName
 					return helpCommand.Handle(r)
+				}
+				if strings.HasPrefix(arg, config.FilePathArg) && config.IsFileUploadAPI(apiName) {
+					var err error
+					uploadFiles, err = ValidateAndGetFileList(arg[len(config.FilePathArg):])
+					if err != nil {
+						return err
+					}
+					if len(uploadFiles) == 0 {
+						return errors.New("no valid files to upload")
+					}
 				}
 			}
 
@@ -82,7 +96,7 @@ func init() {
 				if strings.HasSuffix(err.Error(), "context canceled") {
 					return nil
 				} else if response != nil {
-					printResult(r.Config.Core.Output, response, nil)
+					printResult(r.Config.Core.Output, response, nil, nil)
 				}
 				return err
 			}
@@ -98,10 +112,25 @@ func init() {
 				}
 			}
 
-			if len(response) > 0 {
-				printResult(r.Config.Core.Output, response, filterKeys)
+			var excludeKeys []string
+			for _, arg := range apiArgs {
+				if strings.HasPrefix(arg, "exclude=") {
+					for _, excludeKey := range strings.Split(strings.Split(arg, "=")[1], ",") {
+						if len(strings.TrimSpace(excludeKey)) > 0 {
+							excludeKeys = append(excludeKeys, strings.TrimSpace(excludeKey))
+						}
+					}
+				}
 			}
 
+			if len(response) > 0 {
+				printResult(r.Config.Core.Output, response, filterKeys, excludeKeys)
+				if len(uploadFiles) > 0 {
+					UploadFiles(r, api.Name, response, uploadFiles)
+				} else {
+					PromptAndUploadFilesIfNeeded(r, api.Name, response)
+				}
+			}
 			return nil
 		},
 	}

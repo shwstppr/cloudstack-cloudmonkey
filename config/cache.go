@@ -28,7 +28,10 @@ import (
 )
 
 // FAKE is used for fake CLI only options like filter=
-const FAKE = "fake"
+const (
+	FAKE        = "fake"
+	FilePathArg = "filepath="
+)
 
 // APIArg are the args passable to an API
 type APIArg struct {
@@ -47,6 +50,7 @@ type API struct {
 	Noun         string
 	Args         []*APIArg
 	RequiredArgs []string
+	FakeArgs     []string
 	Related      []string
 	Async        bool
 	Description  string
@@ -145,11 +149,32 @@ func (c *Config) UpdateCache(response map[string]interface{}) interface{} {
 		}
 
 		// Add filter arg
-		apiArgs = append(apiArgs, &APIArg{
+		fakeArg := &APIArg{
 			Name:        "filter=",
 			Type:        FAKE,
 			Description: "cloudmonkey specific response key filtering",
-		})
+		}
+		apiArgs = append(apiArgs, fakeArg)
+		fakeArgs := []string{fakeArg.Name}
+
+		// Add exclude arg
+		fakeArg = &APIArg{
+			Name:        "exclude=",
+			Type:        FAKE,
+			Description: "cloudmonkey specific response key to exlude when filtering",
+		}
+		apiArgs = append(apiArgs, fakeArg)
+		fakeArgs = append(fakeArgs, fakeArg.Name)
+
+		if IsFileUploadAPI(apiName) {
+			fakeArg = &APIArg{
+				Name:        FilePathArg,
+				Type:        FAKE,
+				Description: "cloudmonkey specific key to upload files for supporting APIs. Comma-separated list of file paths can be provided",
+			}
+			apiArgs = append(apiArgs, fakeArg)
+			fakeArgs = append(fakeArgs, fakeArg.Name)
+		}
 
 		sort.Slice(apiArgs, func(i, j int) bool {
 			return apiArgs[i].Name < apiArgs[j].Name
@@ -179,10 +204,21 @@ func (c *Config) UpdateCache(response map[string]interface{}) interface{} {
 			Noun:         noun,
 			Args:         apiArgs,
 			RequiredArgs: requiredArgs,
+			FakeArgs:     fakeArgs,
 			Async:        isAsync,
 			Description:  description,
 			ResponseKeys: responseKeys,
 		}
 	}
 	return count
+}
+
+// IsFileUploadAPI checks if the provided API name corresponds to a file upload-related API.
+// It returns true if the API name matches one of the following (case-insensitive):
+// "getUploadParamsForIso", "getUploadParamsForVolume", or "getUploadParamsForTemplate".
+func IsFileUploadAPI(api string) bool {
+	apiName := strings.ToLower(api)
+	return apiName == "getuploadparamsforiso" ||
+		apiName == "getuploadparamsforvolume" ||
+		apiName == "getuploadparamsfortemplate"
 }

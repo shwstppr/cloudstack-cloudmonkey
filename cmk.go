@@ -47,7 +47,7 @@ func main() {
 	debug := flag.Bool("d", false, "enable debug mode")
 	profile := flag.String("p", "", "server profile")
 	configFilePath := flag.String("c", "", "config file path")
-	acsUrl := flag.String("u", config.DEFAULT_ACS_API_ENDPOINT, "cloudStack's API endpoint URL")
+	acsURL := flag.String("u", config.DefaultACSAPIEndpoint, "cloudStack's API endpoint URL")
 	apiKey := flag.String("k", "", "cloudStack user's API Key")
 	secretKey := flag.String("s", "", "cloudStack user's secret Key")
 	flag.Parse()
@@ -72,8 +72,8 @@ func main() {
 		cfg.UpdateConfig("output", *outputFormat, false)
 	}
 
-	if *acsUrl != config.DEFAULT_ACS_API_ENDPOINT {
-		cfg.UpdateConfig("url", *acsUrl, false)
+	if *acsURL != config.DefaultACSAPIEndpoint {
+		cfg.UpdateConfig("url", *acsURL, false)
 	}
 
 	if *apiKey != "" {

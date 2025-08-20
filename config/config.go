@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/gofrs/flock"
 	homedir "github.com/mitchellh/go-homedir"
 	ini "gopkg.in/ini.v1"
@@ -45,7 +46,15 @@ const (
 	DEFAULT = "default"
 )
 
-const DEFAULT_ACS_API_ENDPOINT = "http://localhost:8080/client/api"
+var nonEmptyConfigKeys = map[string]bool{
+	"output":  true,
+	"timeout": true,
+	"profile": true,
+	"url":     true,
+}
+
+// DefaultACSAPIEndpoint is the default API endpoint for CloudStack.
+const DefaultACSAPIEndpoint = "http://localhost:8080/client/api"
 
 // ServerProfile describes a management server
 type ServerProfile struct {
@@ -72,22 +81,25 @@ type Core struct {
 
 // Config describes CLI config file and default options
 type Config struct {
-	Dir           string
-	ConfigFile    string
-	HistoryFile   string
-	LogFile       string
-	HasShell      bool
-	Core          *Core
-	ActiveProfile *ServerProfile
-	Context       *context.Context
-	Cancel        context.CancelFunc
-	C             chan bool
+	Dir            string
+	ConfigFile     string
+	HistoryFile    string
+	LogFile        string
+	HasShell       bool
+	Core           *Core
+	ActiveProfile  *ServerProfile
+	Context        *context.Context
+	Cancel         context.CancelFunc
+	C              chan bool
+	activeSpinners []*spinner.Spinner
 }
 
+// GetOutputFormats returns the supported output formats.
 func GetOutputFormats() []string {
 	return []string{"column", "csv", "json", "table", "text", "default"}
 }
 
+// CheckIfValuePresent checks if an element is present in the dataset.
 func CheckIfValuePresent(dataset []string, element string) bool {
 	for _, arg := range dataset {
 		if arg == element {
@@ -158,7 +170,7 @@ func defaultCoreConfig() Core {
 
 func defaultProfile() ServerProfile {
 	return ServerProfile{
-		URL:       DEFAULT_ACS_API_ENDPOINT,
+		URL:       DefaultACSAPIEndpoint,
 		Username:  "admin",
 		Password:  "password",
 		Domain:    "/",
@@ -189,6 +201,7 @@ func GetProfiles() []string {
 	return profiles
 }
 
+// SetupContext initializes the context and signal handling for the config.
 func SetupContext(cfg *Config) {
 	cfg.C = make(chan bool)
 	signals := make(chan os.Signal, 1)
@@ -263,6 +276,7 @@ func saveConfig(cfg *Config) *Config {
 		conf.Section(defaultCoreConfig.ProfileName).ReflectFrom(&defaultProfile)
 		conf.SaveTo(cfg.ConfigFile)
 	}
+	makeFileUserPrivate(cfg.ConfigFile)
 
 	conf := readConfig(cfg)
 
@@ -318,6 +332,10 @@ func saveConfig(cfg *Config) *Config {
 		profiles = append(profiles, profile.Name())
 	}
 
+	if cfg.HistoryFile != "" {
+		makeFileUserPrivate(cfg.HistoryFile)
+	}
+
 	return cfg
 }
 
@@ -338,6 +356,10 @@ func (c *Config) LoadProfile(name string) {
 
 // UpdateConfig updates and saves config
 func (c *Config) UpdateConfig(key string, value string, update bool) {
+	if nonEmptyConfigKeys[key] && value == "" {
+		fmt.Printf("Error: value for '%s' must not be empty\n", key)
+		return
+	}
 	switch key {
 	case "prompt":
 		c.Core.Prompt = value
@@ -388,6 +410,14 @@ func (c *Config) UpdateConfig(key string, value string, update bool) {
 
 	if update {
 		reloadConfig(c, true)
+	}
+}
+
+func makeFileUserPrivate(filePath string) {
+	if fi, err := os.Stat(filePath); err == nil && fi.Mode().IsRegular() {
+		if err := os.Chmod(filePath, 0600); err != nil {
+			fmt.Printf("Failed to set permissions on %s: %v\n", filePath, err)
+		}
 	}
 }
 

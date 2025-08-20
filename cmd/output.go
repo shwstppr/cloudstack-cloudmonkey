@@ -62,28 +62,49 @@ func printJSON(response map[string]interface{}) {
 	enc.Encode(response)
 }
 
+func getItemsFromValue(v interface{}) ([]interface{}, reflect.Kind, bool) {
+	valueKind := reflect.TypeOf(v).Kind()
+	if valueKind == reflect.Slice {
+		sliceItems, ok := v.([]interface{})
+		if !ok {
+			return nil, valueKind, false
+		}
+		return sliceItems, valueKind, true
+	} else if valueKind == reflect.Map {
+		mapItem, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, valueKind, false
+		}
+		return []interface{}{mapItem}, valueKind, true
+	}
+	return nil, valueKind, false
+}
+
 func printText(response map[string]interface{}) {
 	format := "text"
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
-		if valueType.Kind() == reflect.Slice {
-			fmt.Printf("%v:\n", k)
-			for idx, item := range v.([]interface{}) {
-				if idx > 0 {
-					fmt.Println("================================================================================")
-				}
-				row, isMap := item.(map[string]interface{})
-				if isMap {
-					for field, value := range row {
-						fmt.Printf("%s = %v\n", field, jsonify(value, format))
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, _, ok := getItemsFromValue(v)
+			if ok {
+				fmt.Printf("%v:\n", k)
+				for idx, item := range items {
+					if idx > 0 {
+						fmt.Println("================================================================================")
 					}
-				} else {
-					fmt.Printf("%v\n", item)
+					row, isMap := item.(map[string]interface{})
+					if isMap {
+						for field, value := range row {
+							fmt.Printf("%s = %v\n", field, jsonify(value, format))
+						}
+					} else {
+						fmt.Printf("%v\n", item)
+					}
 				}
+				return
 			}
-		} else {
-			fmt.Printf("%v = %v\n", k, jsonify(v, format))
 		}
+		fmt.Printf("%v = %v\n", k, jsonify(v, format))
 	}
 }
 
@@ -92,8 +113,8 @@ func printTable(response map[string]interface{}, filter []string) {
 	table := tablewriter.NewWriter(os.Stdout)
 	for k, v := range response {
 		valueType := reflect.TypeOf(v)
-		if valueType.Kind() == reflect.Slice {
-			items, ok := v.([]interface{})
+		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
+			items, _, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -134,7 +155,7 @@ func printColumn(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, _, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -173,7 +194,7 @@ func printCsv(response map[string]interface{}, filter []string) {
 	for _, v := range response {
 		valueType := reflect.TypeOf(v)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, _, ok := getItemsFromValue(v)
 			if !ok {
 				continue
 			}
@@ -206,51 +227,74 @@ func printCsv(response map[string]interface{}, filter []string) {
 	enc.Flush()
 }
 
-func filterResponse(response map[string]interface{}, filter []string, outputType string) map[string]interface{} {
-	if filter == nil || len(filter) == 0 {
+func filterResponse(response map[string]interface{}, filter []string, excludeFilter []string, outputType string) map[string]interface{} {
+	if len(filter) == 0 && len(excludeFilter) == 0 {
 		return response
 	}
+
+	excludeSet := make(map[string]struct{}, len(excludeFilter))
+	for _, key := range excludeFilter {
+		excludeSet[key] = struct{}{}
+	}
+
+	filterSet := make(map[string]struct{}, len(filter))
+	for _, key := range filter {
+		filterSet[key] = struct{}{}
+	}
+
 	filteredResponse := make(map[string]interface{})
-	for k, v := range response {
-		valueType := reflect.TypeOf(v)
+
+	for key, value := range response {
+		valueType := reflect.TypeOf(value)
 		if valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Map {
-			items, ok := v.([]interface{})
+			items, originalKind, ok := getItemsFromValue(value)
 			if !ok {
 				continue
 			}
 			var filteredRows []interface{}
 			for _, item := range items {
 				row, ok := item.(map[string]interface{})
-				if !ok || len(row) < 1 {
+				if !ok || len(row) == 0 {
 					continue
 				}
+
 				filteredRow := make(map[string]interface{})
-				for _, filterKey := range filter {
-					for field := range row {
-						if filterKey == field {
-							filteredRow[field] = row[field]
+
+				if len(filter) > 0 {
+					// Include only keys that exist in filterSet
+					for filterKey := range filterSet {
+						if val, exists := row[filterKey]; exists {
+							filteredRow[filterKey] = val
+						} else if outputType == config.COLUMN || outputType == config.CSV || outputType == config.TABLE {
+							filteredRow[filterKey] = "" // Ensure all filter keys exist in row
 						}
 					}
-					if outputType == config.COLUMN || outputType == config.CSV || outputType == config.TABLE {
-						if _, ok := filteredRow[filterKey]; !ok {
-							filteredRow[filterKey] = ""
+				} else {
+					// Exclude keys from excludeFilter
+					for field, val := range row {
+						if _, excluded := excludeSet[field]; !excluded {
+							filteredRow[field] = val
 						}
 					}
 				}
+
 				filteredRows = append(filteredRows, filteredRow)
 			}
-			filteredResponse[k] = filteredRows
+			if originalKind == reflect.Map && len(filteredRows) > 0 {
+				filteredResponse[key] = filteredRows[0]
+			} else {
+				filteredResponse[key] = filteredRows
+			}
 		} else {
-			filteredResponse[k] = v
-			continue
+			filteredResponse[key] = value
 		}
-
 	}
+
 	return filteredResponse
 }
 
-func printResult(outputType string, response map[string]interface{}, filter []string) {
-	response = filterResponse(response, filter, outputType)
+func printResult(outputType string, response map[string]interface{}, filter []string, excludeFilter []string) {
+	response = filterResponse(response, filter, excludeFilter, outputType)
 	switch outputType {
 	case config.JSON:
 		printJSON(response)
