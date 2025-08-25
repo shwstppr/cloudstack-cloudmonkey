@@ -45,19 +45,34 @@ func newOpCompleter(w io.Writer, op *Operation, width int) *opCompleter {
 		width: width,
 	}
 }
+
+func (o *opCompleter) truncateBufferAfterLastEqual(completion []rune) {
+	bufRunes := o.op.buf.Runes()
+	for i := len(bufRunes) - 1; i >= 0; i-- {
+		if bufRunes[i] == '=' {
+			prefix := bufRunes[i+1:] // part after '=' in buffer
+			if len(prefix) > 0 && len(completion) > 0 && string(completion[:len(prefix)]) == string(prefix) {
+				o.op.buf.Set(bufRunes[:i+1]) // Keep content till '='
+			}
+			break
+		}
+	}
+}
+
 func (o *opCompleter) writeRunes(candidate []rune) {
-	detailIndex := len(candidate)
+	selected := candidate
 	spaceFound := false
 	for idx, r := range candidate {
 		if r == ' ' {
 			spaceFound = true
 		}
 		if spaceFound && r == '(' {
-			detailIndex = idx
+			o.truncateBufferAfterLastEqual(candidate[idx+1:])
+			selected = candidate[:idx]
 			break
 		}
 	}
-	o.op.buf.WriteRunes(candidate[:detailIndex])
+	o.op.buf.WriteRunes(selected)
 }
 
 func (o *opCompleter) doSelect() {
@@ -107,7 +122,7 @@ func (o *opCompleter) OnComplete() bool {
 	// only Aggregate candidates in non-complete mode
 	if !o.IsInCompleteMode() {
 		if len(newLines) == 1 {
-			buf.WriteRunes(newLines[0])
+			o.writeRunes(newLines[0])
 			o.ExitCompleteMode(false)
 			return true
 		}
