@@ -92,7 +92,7 @@ func main() {
 
 	config.Debug("cmdline args:", strings.Join(os.Args, ", "))
 	if len(args) > 0 {
-		if err := cli.ExecCmd(args); err != nil {
+		if err := cli.ExecCmd(args, (*apiKey != "" || *secretKey != "")); err != nil {
 			fmt.Println("🙈 Error:", err)
 			os.Exit(1)
 		}

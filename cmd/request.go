@@ -18,15 +18,17 @@
 package cmd
 
 import (
-	"github.com/apache/cloudstack-cloudmonkey/config"
 	"net/http"
+
+	"github.com/apache/cloudstack-cloudmonkey/config"
 )
 
 // Request describes a command request
 type Request struct {
-	Command *Command
-	Config  *config.Config
-	Args    []string
+	Command             *Command
+	Config              *config.Config
+	Args                []string
+	CredentialsSupplied bool
 }
 
 // Client method returns the http Client for the current server profile
@@ -35,10 +37,11 @@ func (r *Request) Client() *http.Client {
 }
 
 // NewRequest creates a new request from a command
-func NewRequest(cmd *Command, cfg *config.Config, args []string) *Request {
+func NewRequest(cmd *Command, cfg *config.Config, args []string, credentialsSupplied bool) *Request {
 	return &Request{
-		Command: cmd,
-		Config:  cfg,
-		Args:    args,
+		Command:             cmd,
+		Config:              cfg,
+		Args:                args,
+		CredentialsSupplied: credentialsSupplied,
 	}
 }

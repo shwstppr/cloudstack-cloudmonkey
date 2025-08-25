@@ -48,11 +48,11 @@ func ExecLine(line string) error {
 		}
 	}
 
-	return ExecCmd(args)
+	return ExecCmd(args, false)
 }
 
 // ExecCmd executes a single provided command
-func ExecCmd(args []string) error {
+func ExecCmd(args []string, credentialsSupplied bool) error {
 	config.Debug("ExecCmd args: ", strings.Join(args, ", "))
 	if len(args) < 1 {
 		return nil
@@ -60,9 +60,10 @@ func ExecCmd(args []string) error {
 
 	command := cmd.FindCommand(args[0])
 	if command != nil && !(args[0] == "sync" && len(args) > 1) {
-		return command.Handle(cmd.NewRequest(command, cfg, args[1:]))
+		r := cmd.NewRequest(command, cfg, args[1:], credentialsSupplied)
+		return command.Handle(r)
 	}
 
 	catchAllHandler := cmd.GetAPIHandler()
-	return catchAllHandler.Handle(cmd.NewRequest(catchAllHandler, cfg, args))
+	return catchAllHandler.Handle(cmd.NewRequest(catchAllHandler, cfg, args, credentialsSupplied))
 }

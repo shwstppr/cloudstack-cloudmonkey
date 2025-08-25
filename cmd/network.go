@@ -341,7 +341,6 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 			encodedParams = encodedParams + fmt.Sprintf("&signature=%s", url.QueryEscape(signature))
 			params = nil
 		}
-
 	} else if len(r.Config.ActiveProfile.Username) > 0 && len(r.Config.ActiveProfile.Password) > 0 {
 		sessionKey, err := Login(r)
 		if err != nil {
@@ -364,7 +363,11 @@ func NewAPIRequest(r *Request, api string, args []string, isAsync bool) (map[str
 	}
 	config.Debug("NewAPIRequest response status code:", response.StatusCode)
 
-	if response.StatusCode == http.StatusUnauthorized {
+	if r.CredentialsSupplied {
+		config.Debug("Credentials supplied on command-line, not falling back to login")
+	}
+
+	if response.StatusCode == http.StatusUnauthorized && !r.CredentialsSupplied {
 		r.Client().Jar, _ = cookiejar.New(nil)
 		sessionKey, err := Login(r)
 		if err != nil {
