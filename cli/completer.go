@@ -28,6 +28,10 @@ import (
 	"github.com/apache/cloudstack-cloudmonkey/config"
 )
 
+var nameSupportingApis = []string{
+	"configuration",
+}
+
 func buildAPICacheMap(apiMap map[string][]*config.API) map[string][]*config.API {
 	for _, cmd := range cmd.AllCommands() {
 		verb := cmd.Name
@@ -232,14 +236,25 @@ func findAutocompleteAPI(arg *config.APIArg, apiFound *config.API, apiMap map[st
 	default:
 		// Heuristic: autocomplete for the arg for which a list<Arg without id/ids>s API exists
 		// For example, for zoneid arg, listZones API exists
-		cutIdx := len(argName)
+		base := argName
 		if strings.HasSuffix(argName, "id") {
-			cutIdx -= 2
+			base = strings.TrimSuffix(argName, "id")
 		} else if strings.HasSuffix(argName, "ids") {
-			cutIdx -= 3
-		} else {
+			base = strings.TrimSuffix(argName, "ids")
+		} else if argName == "name" {
+			for _, noun := range nameSupportingApis {
+				if strings.HasPrefix(apiFound.Noun, noun) {
+					base = noun
+					break
+				}
+			}
 		}
-		relatedNoun = argName[:cutIdx] + "s"
+		// Handle common cases where base ends with a vowel and needs "es"
+		if strings.HasSuffix(base, "s") || strings.HasSuffix(base, "x") || strings.HasSuffix(base, "z") || strings.HasSuffix(base, "ch") || strings.HasSuffix(base, "sh") {
+			relatedNoun = base + "es"
+		} else {
+			relatedNoun = base + "s"
+		}
 	}
 
 	config.Debug("Possible related noun for the arg: ", relatedNoun, " and type: ", arg.Type)
