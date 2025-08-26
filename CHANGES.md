@@ -1,6 +1,21 @@
 Apache CloudStack CloudMonkey Changelog
 ---------------------------------------
 
+Version 6.5.0
+=============
+This release includes:
+- Adds support for template/ISO file upload
+- Adds support for Two-Factor Authentication (2FA) prompts
+- Improves autocompletion filtering and listing for different resources, with name/detail-based suggestions
+- Enables sending API requests using HTTP POST
+- Improves output formatting for multiple formats and asynchronous APIs
+- Enhances filtering output, with support for async APIs and reverse filtering via the excludefilter option
+- Updates inbuilt API precache to ACS v4.21
+- Improves credential fallback for command-line scenario
+- Hardens file permissions for config and history file access
+- Improves validation when setting configuration values
+- Improves overall linting, tests, and automated workflows for the repository
+
 Version 6.4.0
 =============
 This release includes:
