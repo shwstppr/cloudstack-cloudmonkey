@@ -37,7 +37,12 @@ parts:
       craftctl default
       REPO="${CMK_REPO}"
       TAG="${CMK_TAG}"
-      FULL_SHA="$(git ls-remote "${REPO}" "refs/tags/${TAG}" | awk '{print $1}')"
+      # Try to get the dereferenced commit for annotated tags first
+      FULL_SHA="$(git ls-remote "${REPO}" "refs/tags/${TAG}^{}" | awk '{print $1}')"
+      # If not found, fall back to the tag object itself
+      if [ -z "${FULL_SHA}" ]; then
+        FULL_SHA="$(git ls-remote "${REPO}" "refs/tags/${TAG}" | awk '{print $1}')"
+      fi
       SHORT_SHA="${FULL_SHA:0:7}"
       : "${SHORT_SHA:=unknown}"
       echo "${SHORT_SHA}" > "$CRAFT_PART_SRC/.remote-sha"
