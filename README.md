@@ -10,6 +10,8 @@ can be used with Apache CloudStack 4.0-incubating and above.
 
 For documentation, kindly see the [wiki](https://github.com/apache/cloudstack-cloudmonkey/wiki).
 
+[![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/cloudmonkey)
+
 ### Development
 
 To develop CloudMonkey, you need Go 1.11 or later and a unix-like
